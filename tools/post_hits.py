@@ -64,7 +64,10 @@ def post(score: int, salt: str, addr: str, retries: int = 4) -> None:
     req = request.Request(
         f"{URL}/hit",
         data=body,
-        headers={"content-type": "application/json"},
+        headers={
+            "content-type": "application/json",
+            "user-agent": f"addr-finder-worker/1.0 ({CLIENT_ID})",
+        },
         method="POST",
     )
     if TOKEN:
