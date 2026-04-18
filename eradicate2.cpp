@@ -275,6 +275,19 @@ int main(int argc, char * * argv) {
 		}
 
 		trim(strInitCode);
+
+		// Auto-generate random caller-address if not provided (expands search subspace)
+		if (strAddress.empty()) {
+			std::random_device rd;
+			static const char hex_chars[] = "0123456789abcdef";
+			for (int i = 0; i < 20; ++i) {
+				uint32_t b = rd() & 0xff;
+				strAddress += hex_chars[(b >> 4) & 0xf];
+				strAddress += hex_chars[b & 0xf];
+			}
+			std::cout << "  Random caller-address: 0x" << strAddress << std::endl;
+		}
+
 		const std::string strAddressBinary = keccakDigest(parseHexadecimalBytes(strAddress)).substr(12);
 		const std::string strInitCodeDigest = keccakDigest(parseHexadecimalBytes(strInitCode));
 		const char* nft_address_chars = hexStringToConstChar(nft_address);
