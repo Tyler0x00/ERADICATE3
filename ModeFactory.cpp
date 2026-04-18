@@ -81,6 +81,12 @@ mode ModeFactory::leading(const char charLeading) {
 	return r;
 }
 
+mode ModeFactory::leading_any() {
+	mode r;
+	r.function = ModeFunction::LeadingAny;
+	return r;
+}
+
 mode ModeFactory::range(const cl_uchar min, const cl_uchar max) {
 	mode r;
 	r.function = ModeFunction::Range;

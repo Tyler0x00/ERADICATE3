@@ -77,8 +77,10 @@ Dispatcher::Device::~Device() {
 
 }
 
-Dispatcher::Dispatcher(cl_context & clContext, cl_program & clProgram, const size_t worksizeMax, const size_t size)
-	: m_clContext(clContext), m_clProgram(clProgram), m_worksizeMax(worksizeMax), m_size(size), m_clScoreMax(0), m_eventFinished(NULL), m_countPrint(0) {
+Dispatcher::Dispatcher(cl_context & clContext, cl_program & clProgram, const size_t worksizeMax, const size_t size, const cl_uchar threshold)
+	: m_clContext(clContext), m_clProgram(clProgram), m_worksizeMax(worksizeMax), m_size(size),
+	  m_clScoreMax(threshold > 0 ? threshold - 1 : 0), m_threshold(threshold),
+	  m_eventFinished(NULL), m_countPrint(0) {
 
 }
 
@@ -98,6 +100,7 @@ void Dispatcher::run(const mode & mode) {
 	for (auto it = m_vDevices.begin(); it != m_vDevices.end(); ++it) {
 		Device & d = **it;
 		d.m_round = 0;
+		d.m_clScoreMax = m_clScoreMax;  // inherit threshold baseline if set
 
 		for (size_t i = 0; i < ERADICATE2_MAX_SCORE + 1; ++i) {
 			d.m_memResult[i].found = 0;
@@ -164,24 +167,37 @@ void Dispatcher::enqueueKernelDevice(Device & d, cl_kernel & clKernel, size_t wo
 }
 
 void Dispatcher::deviceDispatch(Device & d) {
-	// Check result
-	for (auto i = ERADICATE2_MAX_SCORE; i > m_clScoreMax; --i) {
-		result & r = d.m_memResult[i];
+	const bool threshold_mode = (m_threshold > 0);
+	bool needsWriteback = false;
 
-		if (r.found > 0 && i >= d.m_clScoreMax) {
-			d.m_clScoreMax = i;
-			CLMemory<cl_uchar>::setKernelArg(d.m_kernelIterate, 2, d.m_clScoreMax);
-
-			std::lock_guard<std::mutex> lock(m_mutex);
-			if (i >= m_clScoreMax) {
-				m_clScoreMax = i;
-
-				// TODO: Add quit condition
-
+	if (threshold_mode) {
+		// Print every hit at or above threshold, reset found counter so future rounds report new hits
+		for (auto i = ERADICATE2_MAX_SCORE; i >= (int)m_threshold; --i) {
+			result & r = d.m_memResult[i];
+			if (r.found > 0) {
+				std::lock_guard<std::mutex> lock(m_mutex);
 				printResult(r, i, timeStart);
+				r.found = 0;
+				needsWriteback = true;
 			}
+		}
+	} else {
+		// Improve-only: only report hits strictly better than current best
+		for (auto i = ERADICATE2_MAX_SCORE; i > m_clScoreMax; --i) {
+			result & r = d.m_memResult[i];
 
-			break;
+			if (r.found > 0 && i >= d.m_clScoreMax) {
+				d.m_clScoreMax = i;
+				CLMemory<cl_uchar>::setKernelArg(d.m_kernelIterate, 2, d.m_clScoreMax);
+
+				std::lock_guard<std::mutex> lock(m_mutex);
+				if (i >= m_clScoreMax) {
+					m_clScoreMax = i;
+					printResult(r, i, timeStart);
+				}
+
+				break;
+			}
 		}
 	}
 
@@ -194,10 +210,22 @@ void Dispatcher::deviceDispatch(Device & d) {
 		}
 	} else {
 		cl_event event;
-		d.m_memResult.read(false, &event);
-		
-		CLMemory<cl_uint>::setKernelArg(d.m_kernelIterate, 4, ++d.m_round); // Round information updated in deviceDispatch()
-		enqueueKernelDevice(d, d.m_kernelIterate, m_size);
+
+		if (threshold_mode) {
+			// write (cleared) -> kernel -> read (so callback CPU buffer has fresh kernel output)
+			if (needsWriteback) {
+				d.m_memResult.write(false);
+			}
+			CLMemory<cl_uint>::setKernelArg(d.m_kernelIterate, 4, ++d.m_round);
+			enqueueKernelDevice(d, d.m_kernelIterate, m_size);
+			d.m_memResult.read(false, &event);
+		} else {
+			// Original pipelined order: read (previous kernel) then launch next kernel
+			d.m_memResult.read(false, &event);
+			CLMemory<cl_uint>::setKernelArg(d.m_kernelIterate, 4, ++d.m_round);
+			enqueueKernelDevice(d, d.m_kernelIterate, m_size);
+		}
+
 		clFlush(d.m_clQueue);
 
 		const auto res = clSetEventCallback(event, CL_COMPLETE, staticCallback, &d);

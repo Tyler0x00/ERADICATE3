@@ -56,7 +56,7 @@ class Dispatcher {
 		};
 
 	public:
-		Dispatcher(cl_context & clContext, cl_program & clProgram, const size_t worksizeMax, const size_t size);
+		Dispatcher(cl_context & clContext, cl_program & clProgram, const size_t worksizeMax, const size_t size, const cl_uchar threshold = 0);
 		~Dispatcher();
 
 		void addDevice(cl_device_id clDeviceId, const size_t worksizeLocal, const size_t index);
@@ -81,6 +81,7 @@ class Dispatcher {
 		const size_t m_worksizeMax;
 		const size_t m_size;
 		cl_uchar m_clScoreMax;
+		cl_uchar m_threshold;  // 0 = improve-only; >0 = print every hit with score >= threshold
 		std::vector<Device *> m_vDevices;
 
 		cl_event m_eventFinished;

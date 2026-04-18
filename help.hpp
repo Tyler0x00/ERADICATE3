@@ -28,6 +28,9 @@ usage: ./ERADICATE2 [OPTIONS]
   Modes with arguments:
     --leading <single hex>  Score on hashes leading with given hex character.
     --matching <hex string> Score on hashes matching given hex string.
+    -r, --repeated <N>      Score on longest leading run of any identical
+                            nibble. Prints every hit with score >= N
+                            (not just best-so-far improvements).
 
   Advanced modes:
     --leading-range         Scores on hashes leading with characters within

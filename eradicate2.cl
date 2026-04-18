@@ -1,5 +1,5 @@
 enum ModeFunction {
-	Benchmark, ZeroBytes, Matching, Leading, Range, Mirror, Doubles, LeadingRange, Trailing
+	Benchmark, ZeroBytes, Matching, Leading, Range, Mirror, Doubles, LeadingRange, Trailing, LeadingAny
 };
 
 typedef struct {
@@ -25,6 +25,7 @@ void eradicate2_score_range(const uchar * const hash, __global result * const pR
 void eradicate2_score_leadingrange(const uchar * const hash, __global result * const pResult, __global const mode * const pMode, const uchar scoreMax, const uint deviceIndex, const uint round);
 void eradicate2_score_mirror(const uchar * const hash, __global result * const pResult, __global const mode * const pMode, const uchar scoreMax, const uint deviceIndex, const uint round);
 void eradicate2_score_doubles(const uchar * const hash, __global result * const pResult, __global const mode * const pMode, const uchar scoreMax, const uint deviceIndex, const uint round);
+void eradicate2_score_leading_any(const uchar * const hash, __global result * const pResult, __global const mode * const pMode, const uchar scoreMax, const uint deviceIndex, const uint round);
 
 __kernel void eradicate2_iterate(__global result * const pResult, __global const mode * const pMode, const uchar scoreMax, const uint deviceIndex, const uint round) {
 	ethhash h = { .q = { ERADICATE2_INITHASH } };
@@ -93,6 +94,10 @@ __kernel void eradicate2_iterate(__global result * const pResult, __global const
 	case LeadingRange:
 		eradicate2_score_leadingrange(h.b + 12, pResult, pMode, scoreMax, deviceIndex, round);
 		break;
+
+	case LeadingAny:
+		eradicate2_score_leading_any(h.b + 12, pResult, pMode, scoreMax, deviceIndex, round);
+		break;
 	}
 }
 
@@ -136,6 +141,27 @@ void eradicate2_score_leading(const uchar * const hash, __global result * const 
 		} else {
 			break;
 		}
+	}
+
+	eradicate2_result_update(hash, pResult, score, scoreMax, deviceIndex, round);
+}
+
+void eradicate2_score_leading_any(const uchar * const hash, __global result * const pResult, __global const mode * const pMode, const uchar scoreMax, const uint deviceIndex, const uint round) {
+	const uchar first = (hash[0] & 0xF0) >> 4;
+	int score = 1;
+
+	// second nibble of byte 0
+	if ((hash[0] & 0x0F) != first) {
+		eradicate2_result_update(hash, pResult, score, scoreMax, deviceIndex, round);
+		return;
+	}
+	++score;
+
+	for (int i = 1; i < 20; ++i) {
+		if (((hash[i] & 0xF0) >> 4) != first) break;
+		++score;
+		if ((hash[i] & 0x0F) != first) break;
+		++score;
 	}
 
 	eradicate2_result_update(hash, pResult, score, scoreMax, deviceIndex, round);

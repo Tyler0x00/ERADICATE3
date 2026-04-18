@@ -254,6 +254,9 @@ int main(int argc, char * * argv) {
 		argp.addSwitch('I', "init-code", strInitCode);
 		argp.addSwitch('i', "init-code-file", strInitCodeFile);
 
+		int repeatedThreshold = 0;
+		argp.addSwitch('r', "repeated", repeatedThreshold);
+
 		if (!argp.parse()) {
 			std::cout << "error: bad arguments, try again :<" << std::endl;
 			return 1;
@@ -319,6 +322,8 @@ int main(int argc, char * * argv) {
 			mode = ModeFactory::mirror();
 		} else if (bModeDoubles) {
 			mode = ModeFactory::doubles();
+		} else if (repeatedThreshold > 0) {
+			mode = ModeFactory::leading_any();
 		} else {
 			std::cout << g_strHelp << std::endl;
 			return 0;
@@ -412,7 +417,7 @@ int main(int argc, char * * argv) {
 
 		std::cout << std::endl;
 
-		Dispatcher d(clContext, clProgram, worksizeMax == 0 ? size : worksizeMax, size);
+		Dispatcher d(clContext, clProgram, worksizeMax == 0 ? size : worksizeMax, size, static_cast<cl_uchar>(repeatedThreshold));
 		for (auto & i : vDevices) {
 			d.addDevice(i, worksizeLocal, mDeviceIndex[i]);
 		}
