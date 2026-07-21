@@ -31,6 +31,13 @@ usage: ./ERADICATE2 [OPTIONS]
     -r, --repeated <N>      Score on longest leading run of any identical
                             nibble. Prints every hit with score >= N
                             (not just best-so-far improvements).
+    -p, --repeated-pair <N> Additional rule; combine with -r <M>. Also match a
+                            leading run of one hex character repeated >= N times
+                            immediately followed by a different hex character
+                            repeated >= N times (min length 2*N, may be longer).
+                            A hit is reported when it satisfies -r's run OR this
+                            pair rule, so e.g. "-r 10 -p 6" keeps every 10-char
+                            run and additionally catches 6+6 patterns.
 
   Advanced modes:
     --leading-range         Scores on hashes leading with characters within

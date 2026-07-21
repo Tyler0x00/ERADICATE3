@@ -1,5 +1,5 @@
 enum ModeFunction {
-	Benchmark, ZeroBytes, Matching, Leading, Range, Mirror, Doubles, LeadingRange, Trailing, LeadingAny
+	Benchmark, ZeroBytes, Matching, Leading, Range, Mirror, Doubles, LeadingRange, Trailing, LeadingAny, LeadingAnyPair
 };
 
 typedef struct {
@@ -26,6 +26,7 @@ void eradicate2_score_leadingrange(const uchar * const hash, __global result * c
 void eradicate2_score_mirror(const uchar * const hash, __global result * const pResult, __global const mode * const pMode, const uchar scoreMax, const uint deviceIndex, const uint round);
 void eradicate2_score_doubles(const uchar * const hash, __global result * const pResult, __global const mode * const pMode, const uchar scoreMax, const uint deviceIndex, const uint round);
 void eradicate2_score_leading_any(const uchar * const hash, __global result * const pResult, __global const mode * const pMode, const uchar scoreMax, const uint deviceIndex, const uint round);
+void eradicate2_score_leading_any_pair(const uchar * const hash, __global result * const pResult, __global const mode * const pMode, const uchar scoreMax, const uint deviceIndex, const uint round);
 
 __kernel void eradicate2_iterate(__global result * const pResult, __global const mode * const pMode, const uchar scoreMax, const uint deviceIndex, const uint round) {
 	ethhash h = { .q = { ERADICATE2_INITHASH } };
@@ -98,6 +99,10 @@ __kernel void eradicate2_iterate(__global result * const pResult, __global const
 	case LeadingAny:
 		eradicate2_score_leading_any(h.b + 12, pResult, pMode, scoreMax, deviceIndex, round);
 		break;
+
+	case LeadingAnyPair:
+		eradicate2_score_leading_any_pair(h.b + 12, pResult, pMode, scoreMax, deviceIndex, round);
+		break;
 	}
 }
 
@@ -163,6 +168,49 @@ void eradicate2_score_leading_any(const uchar * const hash, __global result * co
 		if ((hash[i] & 0x0F) != first) break;
 		++score;
 	}
+
+	eradicate2_result_update(hash, pResult, score, scoreMax, deviceIndex, round);
+}
+
+// Combined leading scoring: two OR-ed rules.
+//   Rule A (pure run): a leading run of one nibble of length run1 >= minRun (T).
+//                      Score = run1. minRun == 0 disables this rule.
+//   Rule B (pair):     a leading run (run1) immediately followed by a run of a
+//                      *different* nibble (run2), with run1 >= minPair AND
+//                      run2 >= minPair (P). Score = run1 + run2 (max 40).
+// The reported score is the larger of the two, so a hit from either rule clears
+// a print floor of min(T, 2*P). minPair is in data1[0], minRun in data2[0].
+void eradicate2_score_leading_any_pair(const uchar * const hash, __global result * const pResult, __global const mode * const pMode, const uchar scoreMax, const uint deviceIndex, const uint round) {
+	const uchar minPair = pMode->data1[0];   // P: each half of the pair
+	const uchar minRun  = pMode->data2[0];   // T: pure leading run (0 = disabled)
+
+	// The 20-byte hash is 40 hex nibbles; nibble n lives in hash[n >> 1],
+	// high half for even n, low half for odd n.
+	const uchar first = (hash[0] & 0xF0) >> 4;
+
+	int idx = 0;
+	int run1 = 0;
+	for (; idx < 40; ++idx) {
+		const uchar nib = (idx & 1) ? (hash[idx >> 1] & 0x0F) : ((hash[idx >> 1] & 0xF0) >> 4);
+		if (nib != first) break;
+		++run1;
+	}
+
+	int run2 = 0;
+	if (idx < 40) {
+		// This nibble differs from 'first' by construction, so it is the
+		// required "different" character for the second run.
+		const uchar second = (idx & 1) ? (hash[idx >> 1] & 0x0F) : ((hash[idx >> 1] & 0xF0) >> 4);
+		for (; idx < 40; ++idx) {
+			const uchar nib = (idx & 1) ? (hash[idx >> 1] & 0x0F) : ((hash[idx >> 1] & 0xF0) >> 4);
+			if (nib != second) break;
+			++run2;
+		}
+	}
+
+	const int scoreA = (minRun  > 0 && run1 >= minRun) ? run1 : 0;
+	const int scoreB = (minPair > 0 && run1 >= minPair && run2 >= minPair) ? (run1 + run2) : 0;
+	const int score = scoreA > scoreB ? scoreA : scoreB;
 
 	eradicate2_result_update(hash, pResult, score, scoreMax, deviceIndex, round);
 }

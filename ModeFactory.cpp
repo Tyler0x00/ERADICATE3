@@ -87,6 +87,20 @@ mode ModeFactory::leading_any() {
 	return r;
 }
 
+// Combined "leading-any-pair" scoring, carrying two thresholds to the kernel:
+//   data1[0] = minPair (P): the pair rule scores run1+run2 only when a leading
+//              run of one nibble AND the following run of a different nibble are
+//              each >= P.
+//   data2[0] = minRun (T): a single leading run of >= T identical nibbles also
+//              scores (its length). T == 0 disables the pure-run rule.
+mode ModeFactory::leading_any_pair(const cl_uchar minRun, const cl_uchar minPair) {
+	mode r;
+	r.function = ModeFunction::LeadingAnyPair;
+	r.data1[0] = minPair;
+	r.data2[0] = minRun;
+	return r;
+}
+
 mode ModeFactory::range(const cl_uchar min, const cl_uchar max) {
 	mode r;
 	r.function = ModeFunction::Range;

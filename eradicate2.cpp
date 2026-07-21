@@ -257,6 +257,9 @@ int main(int argc, char * * argv) {
 		int repeatedThreshold = 0;
 		argp.addSwitch('r', "repeated", repeatedThreshold);
 
+		int pairThreshold = 0;
+		argp.addSwitch('p', "repeated-pair", pairThreshold);
+
 		if (!argp.parse()) {
 			std::cout << "error: bad arguments, try again :<" << std::endl;
 			return 1;
@@ -265,6 +268,19 @@ int main(int argc, char * * argv) {
 		if (bHelp) {
 			std::cout << g_strHelp << std::endl;
 			return 0;
+		}
+
+		if (repeatedThreshold < 0 || pairThreshold < 0) {
+			std::cout << "error: -r and -p must be non-negative" << std::endl;
+			return 1;
+		}
+		if (repeatedThreshold > 40) {
+			std::cout << "error: -r maximum is 40 (an address has 40 hex characters)" << std::endl;
+			return 1;
+		}
+		if (pairThreshold > 20) {
+			std::cout << "error: -p maximum is 20 (a pair of runs needs 2*N <= 40 hex characters)" << std::endl;
+			return 1;
 		}
 
 		// Parse hexadecimal values and/or read init code from file
@@ -322,8 +338,14 @@ int main(int argc, char * * argv) {
 			mode = ModeFactory::mirror();
 		} else if (bModeDoubles) {
 			mode = ModeFactory::doubles();
-		} else if (repeatedThreshold > 0) {
-			mode = ModeFactory::leading_any();
+		} else if (repeatedThreshold > 0 || pairThreshold > 0) {
+			if (pairThreshold > 0) {
+				// Combined rule: pure leading run (>= repeatedThreshold, 0 disables)
+				// OR pair pattern (each half >= pairThreshold).
+				mode = ModeFactory::leading_any_pair(static_cast<cl_uchar>(repeatedThreshold), static_cast<cl_uchar>(pairThreshold));
+			} else {
+				mode = ModeFactory::leading_any();
+			}
 		} else {
 			std::cout << g_strHelp << std::endl;
 			return 0;
@@ -417,7 +439,17 @@ int main(int argc, char * * argv) {
 
 		std::cout << std::endl;
 
-		Dispatcher d(clContext, clProgram, worksizeMax == 0 ? size : worksizeMax, size, static_cast<cl_uchar>(repeatedThreshold));
+		// Effective print floor: the smallest score any active rule can produce,
+		// so a hit from either rule is reported.
+		//   -r T pure run  -> floor T      (T identical leading chars)
+		//   -p P pair rule -> floor 2*P    (P identical + P different chars)
+		int printThreshold = repeatedThreshold;
+		if (pairThreshold > 0) {
+			const int pairFloor = 2 * pairThreshold;
+			printThreshold = (repeatedThreshold > 0) ? std::min(repeatedThreshold, pairFloor) : pairFloor;
+		}
+
+		Dispatcher d(clContext, clProgram, worksizeMax == 0 ? size : worksizeMax, size, static_cast<cl_uchar>(printThreshold));
 		for (auto & i : vDevices) {
 			d.addDevice(i, worksizeLocal, mDeviceIndex[i]);
 		}
